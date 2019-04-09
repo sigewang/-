@@ -78,6 +78,7 @@ class MySprite(pygame.sprite.Sprite):
         self.velocity = Point(0.0, 0.0)
         self.bullets = pygame.sprite.Group()
         self.dr_group = pygame.sprite.Group()
+        self.drzd_group =pygame.sprite.Group()
         self.life = 0
         # X property
 
@@ -113,12 +114,10 @@ class MySprite(pygame.sprite.Sprite):
         self.frame_height = height
         self.rect = Rect(0, 0, width, height)
         self.columns = columns
-        # try to auto-calculate total frames
         rect = self.master_image.get_rect()
         self.last_frame = (rect.width // width) * (rect.height // height) - 1
 
     def update(self, current_time, rate=30):
-        # update animation frame number
         if current_time > self.last_time + rate:
             self.frame += 1
             if self.frame > self.last_frame:
@@ -146,7 +145,6 @@ class MySprite(pygame.sprite.Sprite):
         dr_pos = random.randint(0,530),0
         dr = dr_feiji(dr_pos)
         self.dr_group.add(dr)
-
 
 
 def calc_velocity(Kw,Kd,Ks,Ka, vel=1.0):
@@ -199,18 +197,21 @@ class MyMap(pygame.sprite.Sprite):
         self.y = y
 
 
-
 # 子弹类，继承自Sprite类
 class Bullet(pygame.sprite.Sprite):
-    # 构造方法，参数分别是子弹图片和起始位置
-    def __init__(self,zidan_pos):
+    def __init__(self,zidan_pos,zdlx):
         # 调用父类的构造方法
         pygame.sprite.Sprite.__init__(self)
         # 设置属性
-        self.image = pygame.image.load("chap04/playzidan.png").subsurface(pygame.Rect(0,0,42,50))  # image属性：子弹图片
+        if zdlx == 'player':
+            self.image = pygame.image.load("chap04/playzidan.png").subsurface(pygame.Rect(0, 0, 42, 50))  # image属性：子弹图片
+            self.speed = 20  # speed属性：子弹移动速度
+        elif zdlx == 'drfeiji':
+            self.image = pygame.image.load("chap04/drzd_01.png").subsurface(pygame.Rect(0, 0, 15, 15))    # image属性：子弹图片
+            self.speed = -2  # speed属性：子弹移动速度
         self.rect = self.image.get_rect()  # rect属性：矩形
         self.rect.topleft = zidan_pos  # 矩形左上角坐标
-        self.speed = 20  # speed属性：子弹移动速度
+
 
     # 移动方法
     def update(self):
@@ -219,10 +220,15 @@ class Bullet(pygame.sprite.Sprite):
         # 如果子弹移出屏幕上方，则销毁子弹对象
         if self.rect.top < 0:
             self.kill()
+        wjbjz = pygame.sprite.spritecollideany(player, drfeiji.drzd_group) #玩家被击中时给wjbjz赋值
+        if wjbjz :
+            if pygame.sprite.collide_circle_ratio(0.5)(player, wjbjz):
+                player.life-=10
+                drfeiji.drzd_group.remove(wjbjz)
+
 
 # 敌机类，继承自Sprite类
 class dr_feiji(pygame.sprite.Sprite):
-    # 构造方法，参数分别是子弹图片和起始位置
     def __init__(self,dr_pos):
         # 调用父类的构造方法
         pygame.sprite.Sprite.__init__(self)
@@ -230,30 +236,131 @@ class dr_feiji(pygame.sprite.Sprite):
         self.image = pygame.image.load("chap04/dr-01.png").subsurface(pygame.Rect(0,0,70,70))  # image属性：飞机图片
         self.rect = self.image.get_rect()  # rect属性：矩形
         self.rect.topleft = dr_pos  # 矩形左上角坐标
-        self.speed = random.randint(2,4)  # speed属性：敌人移动速度
-
+        self.speed_y = random.randint(2,4)  # speed属性：敌人y轴移动速度
+        self.speed_x = random.randint(1,3)  # speed属性：敌人x轴移动速度
+        self.drms_sj = random.randint(1,3)#敌人行动模式随机
+        self.drzd_group = pygame.sprite.Group() #敌人子弹精灵组
 
     # 移动方法
     def update(self):
         # 修改敌人坐标
-        self.rect.top += self.speed
+
+        if self.drms_sj == 1:
+            self.rect.top += self.speed_y
+        elif self.drms_sj ==2:
+            self.rect.left += self.speed_x
+            self.rect.top += self.speed_y*1.5
+        elif self.drms_sj ==3:
+            self.rect.left += self.speed_x
         # 如果敌人移出屏幕下方，则销毁敌人对象
         if self.rect.top > 800:
             self.kill()
+        if self.rect.left > 530:
+            self.speed_x=-self.speed_x
+        elif self.rect.left < 0:
+            self.speed_x-=self.speed_x
+
         pygame.sprite.groupcollide(drfeiji.dr_group,playerzidan.bullets,True,True)
         wjboom = pygame.sprite.spritecollide(player,drfeiji.dr_group,True)
         if wjboom:
             player.life-=10
 
+        if drzdjg % 100 ==0:
+            drzd = Bullet((self.rect.left + 26, self.rect.top + 70), 'drfeiji')
+            drfeiji.drzd_group.add(drzd)
+
     def __del__(self):
         boom_x = self.rect.left
         boom_y = self.rect.top
+        drboom = NewBoom(screen)
+        drboom.load("chap04/boom.png", 70, 70, 6)
         drboom.position = boom_x,boom_y
         drboom_group.add(drboom)
 
+# 爆炸精灵类，继承自Sprite类
+class NewBoom(pygame.sprite.Sprite):
+    def __init__(self,zidan_pos):
+        # 调用父类的构造方法
+        pygame.sprite.Sprite.__init__(self)
+        # 设置属性
+        self.master_image = None #爆炸图片
+        self.frame = 0      #当前帧
+        self.old_frame = -1     #上一帧
+        self.frame_width = 1    #帧宽度
+        self.frame_height = 1   #帧高度
+        self.first_frame = 0    #第一帧
+        self.last_frame = 0     #最后一帧
+        self.columns = 1        #图片列数
+        self.last_time = 0      #循环一次的时间
+
+    def _getx(self):
+        return self.rect.x
+
+    def _setx(self, value):
+        self.rect.x = value
+
+    X = property(_getx, _setx)
+
+    # Y property
+    def _gety(self):
+        return self.rect.y
+
+    def _sety(self, value):
+        self.rect.y = value
+
+    Y = property(_gety, _sety)
+
+    # position property
+    def _getpos(self):
+        return self.rect.topleft
+
+    def _setpos(self, pos):
+        self.rect.topleft = pos
+
+    position = property(_getpos, _setpos)
+
+    def load(self, filename, width, height, columns):
+        self.master_image = pygame.image.load(filename).convert_alpha()
+        self.frame_width = width
+        self.frame_height = height
+        self.rect = Rect(0, 0, width, height)
+        self.columns = columns
+        rect = self.master_image.get_rect()
+        self.last_frame = (rect.width // width) * (rect.height // height) - 1
+
+    def update(self, current_time, rate=30):
+        if current_time > self.last_time + rate:
+            self.frame += 1
+            if self.frame > self.last_frame:
+                self.frame = self.first_frame
+                self.kill()
+            self.last_time = current_time
+
+        #
+        if self.frame != self.old_frame:
+            frame_x = (self.frame % self.columns) * self.frame_width
+            frame_y = (self.frame // self.columns) * self.frame_height
+            rect = Rect(frame_x, frame_y, self.frame_width, self.frame_height)
+            self.image = self.master_image.subsurface(rect)
+            self.old_frame = self.frame
+
+    def __str__(self):
+        return str(self.frame) + "," + str(self.first_frame) + \
+               "," + str(self.last_frame) + "," + str(self.frame_width) + \
+               "," + str(self.frame_height) + "," + str(self.columns) + \
+               "," + str(self.rect)
+
+    def shoot(self,arrow):
+        self.bullets.add(arrow)
+
+    def drupdate(self):
+        dr_pos = random.randint(400,530),0
+        dr = dr_feiji(dr_pos)
+        self.dr_group.add(dr)
+
 def print_text(font, x, y, text, color=(255,255,255)):
     imgText = font.render(text, True, color)
-    screen = pygame.display.get_surface() #req'd when function moved into MyLibrary
+    screen = pygame.display.get_surface()
     screen.blit(imgText, (x,y))
 
 pygame.init()
@@ -266,12 +373,13 @@ framerate = pygame.time.Clock()
 #精灵组
 player_group = pygame.sprite.Group()
 drboom_group = pygame.sprite.Group()
+playerboom_group = pygame.sprite.Group()
 
 #初始化玩家精灵
 player = MySprite(screen)
 player.load("chap04/feijif.png", 100,100, 5)
 player.position = 250,600
-player.life = 100
+player.life = 10
 player_group.add(player)
 vel = 5.0
 Kw=Ks=Ka=Kd=0
@@ -279,9 +387,13 @@ Kw=Ks=Ka=Kd=0
 bg1 = MyMap(0,0)
 bg2 = MyMap(0,800)
 player_moving = False
-#爆炸精灵
-drboom = MySprite(screen)
-drboom.load("chap04/boom.png",70,70,6)
+#敌人爆炸
+drboom = NewBoom(screen)
+drboom.load("chap04/boom.png", 70, 70, 6)
+#玩家爆炸
+playerboom = NewBoom(screen)
+playerboom.load("chap04/player_boom.png", 100, 100, 6)
+playerboomjs = False
 #敌人精灵
 drfeiji = MySprite(screen)
 #子弹精灵
@@ -292,6 +404,10 @@ zidanjg = 0
 boomtime = 0
 #敌人间隔
 drjg=0
+#敌人子弹间隔
+drzdjg=0
+
+
 GameOver = False
 
 while True:
@@ -300,7 +416,9 @@ while True:
         ticks = pygame.time.get_ticks()
         zidanjg+=1
         drjg+=1
-
+        drzdjg+=1
+        if drzdjg == 400:
+            drzdjg=0
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -406,37 +524,56 @@ while True:
 
         if zidanjg % 10 == 0:
             zidan_pos = player.X+30,player.Y-30
-            arrow = Bullet(zidan_pos)
+            arrow = Bullet(zidan_pos,'player')
             playerzidan.shoot(arrow)
             # 子弹移动
         playerzidan.bullets.update()  # 精灵组update时，会调用所有精灵的update方法
 
 
         if drjg % 100 ==0:
-
             drfeiji.drupdate()
             #生成敌机
+
         drfeiji.dr_group.update()
+        drfeiji.drzd_group.update()
 
+        drboom_group.update(ticks, 80)
 
-        drboom_group.update(ticks, 30)
-        if drboom.frame == drboom.last_frame:
-            drboom.kill()
 
         player_group.draw(screen)
         playerzidan.bullets.draw(screen)
         drfeiji.dr_group.draw(screen)
+        drfeiji.drzd_group.draw(screen)
         drboom_group.draw(screen)
 
         #玩家血条
         pygame.draw.rect(screen, (50, 150, 50, 180), Rect(400, 775, player.life * 2, 25))
         pygame.draw.rect(screen, (100, 200, 100, 180), Rect(400, 775, 200, 25), 2)
         if player.life<=0:
+            player.kill()
+            playerboom.position=player.X,player.Y
+            if playerboomjs ==False:
+                playerboom_group.add(playerboom)
+            playerboom_group.update(ticks, 50)
+            playerboom_group.draw(screen)
+            if playerboom.frame >= playerboom.last_frame:
+                playerboomjs=True
+        if playerboomjs==True:
+            time.sleep(2)
             GameOver =True
     else:
+        screen.fill((0,0,0))
         print_text(font, 200,400 , "G A M E   O V E R")
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
+        ckeys = pygame.key.get_pressed()
+        if ckeys[K_BACKSPACE]:
+            player.life=10
+            player.position = 250, 600
+            player_group.add(player)
+            GameOver = False
+            playerboomjs=False
+
     pygame.display.update()
